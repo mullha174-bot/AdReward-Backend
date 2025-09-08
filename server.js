@@ -21,20 +21,31 @@ app.post('/api/user', (req, res) => {
         return res.status(400).json({ error: 'User ID is required' });
     }
 
+    // আইডিকে সবসময় নম্বরে পরিণত করা হচ্ছে
+    const userId = parseInt(id); 
     const sql = "SELECT * FROM users WHERE telegram_id = ?";
-    db.get(sql, [id], (err, row) => {
-        if (err) { return res.status(500).json({ error: err.message }); }
+
+    db.get(sql, [userId], (err, row) => {
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+        
         if (row) {
-            if (row.telegram_id === ADMIN_TELEGRAM_ID) {
-                row.is_admin = 1;
-            }
+            // ব্যবহারকারী অ্যাডমিন কিনা তা প্রতিবার স্পষ্টভাবে যাচাই করা হচ্ছে
+            row.is_admin = (userId === 8457318925) ? 1 : 0;
             res.json(row);
         } else {
-            const isAdmin = (id === ADMIN_TELEGRAM_ID) ? 1 : 0;
+            // নতুন ব্যবহারকারীর জন্য অ্যাডমিন স্ট্যাটাস সেট করা হচ্ছে
+            const isAdmin = (userId === 8457318925) ? 1 : 0;
             const insert = 'INSERT INTO users (telegram_id, username, first_name, is_admin) VALUES (?,?,?,?)';
-            db.run(insert, [id, username, first_name, isAdmin], function (err) {
-                if (err) { return res.status(500).json({ error: err.message }); }
-                db.get(sql, [id], (err, newUser) => {
+            db.run(insert, [userId, username, first_name, isAdmin], function (err) {
+                if (err) {
+                    return res.status(500).json({ error: err.message });
+                }
+                db.get(sql, [userId], (err, newUser) => {
+                    if (newUser) {
+                        newUser.is_admin = isAdmin;
+                    }
                     res.status(201).json(newUser);
                 });
             });
