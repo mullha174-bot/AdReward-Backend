@@ -61,7 +61,28 @@ app.get('/api/reward-history', (req, res) => {
     // আপাতত, 404 এররটি ঠিক করার জন্য এটিই যথেষ্ট।
     res.json([]); 
 });
+// --- অ্যাডমিন প্যানেলের SDK সেভ করার জন্য নতুন কোড ---
+
+// SDK গুলো স্টোর করার জন্য একটি ভ্যারিয়েবল (বাস্তবে এটি ডেটাবেসে থাকা উচিত)
+let adSdks = { ad1: '', ad2: '', ad3: '', ad4: '' };
+
+// SDK আপডেট করার জন্য API
+app.post('/api/admin/update-sdks', (req, res) => {
+    // রিকোয়েস্টের body থেকে নতুন SDK গুলো নেওয়া হচ্ছে
+    const { ad1, ad2, ad3, ad4 } = req.body;
+
+    // ভ্যারিয়েবলে নতুন SDK গুলো সেভ করা হচ্ছে
+    adSdks.ad1 = ad1 || '';
+    adSdks.ad2 = ad2 || '';
+    adSdks.ad3 = ad3 || '';
+    adSdks.ad4 = ad4 || '';
+
+    console.log('Updated SDKs:', adSdks); // সার্ভার কনসোলে লগ দেখানোর জন্য
+    res.json({ success: true, message: 'SDKs updated successfully!' });
+});
+
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
+
 
