@@ -5,51 +5,38 @@ const db = require('./database.js');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// আপনার দেওয়া অ্যাডমিন আইডি এখানে সেট করা আছে
 const ADMIN_TELEGRAM_ID = 8457318925; 
 
+// Updated CORS configuration
 app.use(cors({
-    origin: '*', // সব ধরনের ওয়েবসাইটকে ডেটা ব্যবহারের অনুমতি দেওয়া হচ্ছে
-    methods: ['GET', 'POST', 'PUT', 'DELETE'], // সব ধরনের রিকোয়েস্ট মেথডকে অনুমতি দেওয়া হচ্ছে
-    allowedHeaders: ['Content-Type', 'Authorization'] // প্রয়োজনীয় হেডারগুলোকে অনুমতি দেওয়া হচ্ছে
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
 
+// --- User Routes ---
 app.get('/', (req, res) => {
     res.send('AdReward Backend Server is running!');
 });
 
 app.post('/api/user', (req, res) => {
     const { id, username, first_name } = req.body;
-    if (!id) {
-        return res.status(400).json({ error: 'User ID is required' });
-    }
-
-    // আইডিকে সবসময় নম্বরে পরিণত করা হচ্ছে
+    if (!id) return res.status(400).json({ error: 'User ID is required' });
     const userId = parseInt(id); 
     const sql = "SELECT * FROM users WHERE telegram_id = ?";
-
     db.get(sql, [userId], (err, row) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
-        
+        if (err) return res.status(500).json({ error: err.message });
         if (row) {
-            // ব্যবহারকারী অ্যাডমিন কিনা তা প্রতিবার স্পষ্টভাবে যাচাই করা হচ্ছে
-            row.is_admin = (userId === 8457318925) ? 1 : 0;
+            row.is_admin = (userId === ADMIN_TELEGRAM_ID) ? 1 : 0;
             res.json(row);
         } else {
-            // নতুন ব্যবহারকারীর জন্য অ্যাডমিন স্ট্যাটাস সেট করা হচ্ছে
-            const isAdmin = (userId === 8457318925) ? 1 : 0;
+            const isAdmin = (userId === ADMIN_TELEGRAM_ID) ? 1 : 0;
             const insert = 'INSERT INTO users (telegram_id, username, first_name, is_admin) VALUES (?,?,?,?)';
             db.run(insert, [userId, username, first_name, isAdmin], function (err) {
-                if (err) {
-                    return res.status(500).json({ error: err.message });
-                }
+                if (err) return res.status(500).json({ error: err.message });
                 db.get(sql, [userId], (err, newUser) => {
-                    if (newUser) {
-                        newUser.is_admin = isAdmin;
-                    }
+                    if (newUser) newUser.is_admin = isAdmin;
                     res.status(201).json(newUser);
                 });
             });
@@ -57,37 +44,88 @@ app.post('/api/user', (req, res) => {
     });
 });
 
-// ... (অন্যান্য API কোড অপরিবর্তিত)
-// রিওয়ার্ড হিস্টরি দেওয়ার জন্য নতুন API এন্ডপয়েন্ট
-app.get('/api/reward-history', (req, res) => {
-    // এই মুহূর্তে আমরা একটি খালি তালিকা পাঠাচ্ছি।
-    // ভবিষ্যতে আমরা এখানে ডেটাবেস থেকে আসল তথ্য পাঠানোর কোড লিখব।
-    // আপাতত, 404 এররটি ঠিক করার জন্য এটিই যথেষ্ট।
-    res.json([]); 
+app.post('/api/watch-ad', (req, res) => {
+    const { user_id, ad_id } = req.body;
+    if (!user_id || !ad_id) return res.status(400).json({ error: 'User ID and Ad ID are required' });
+    const reward = 0.0005;
+    const userId = parseInt(user_id);
+    const updateUserSql = `UPDATE users SET balance = balance + ?, ads_watched = ads_watched + 1, total_earned = total_earned + ? WHERE telegram_id = ?`;
+    db.run(updateUserSql, [reward, reward, userId], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        const insertHistorySql = `INSERT INTO reward_history (user_id, ad_id, amount) VALUES (?, ?, ?)`;
+        db.run(insertHistorySql, [userId, ad_id, reward], (err) => {
+            if (err) return res.status(500).json({ error: 'Failed to save reward history' });
+            db.get("SELECT balance FROM users WHERE telegram_id = ?", [userId], (err, user) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true, reward: reward, balance: user.balance });
+            });
+        });
+    });
 });
-// --- অ্যাডমিন প্যানেলের SDK সেভ করার জন্য নতুন কোড ---
 
-// SDK গুলো স্টোর করার জন্য একটি ভ্যারিয়েবল (বাস্তবে এটি ডেটাবেসে থাকা উচিত)
+app.get('/api/reward-history', (req, res) => {
+    const userId = parseInt(req.query.user_id);
+    if (!userId) return res.status(400).json({ error: 'User ID is required' });
+    const sql = "SELECT ad_id, amount, created_at FROM reward_history WHERE user_id = ? ORDER BY created_at DESC LIMIT 20";
+    db.all(sql, [userId], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows);
+    });
+});
+
+app.get('/api/leaderboard', (req, res) => {
+    const sql = "SELECT first_name, username, total_earned FROM users WHERE is_admin = 0 ORDER BY total_earned DESC LIMIT 50";
+    db.all(sql, [], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows);
+    });
+});
+
+// --- Admin Routes ---
 let adSdks = { ad1: '', ad2: '', ad3: '', ad4: '' };
 
-// SDK আপডেট করার জন্য API
-app.post('/api/admin/update-sdks', (req, res) => {
-    // রিকোয়েস্টের body থেকে নতুন SDK গুলো নেওয়া হচ্ছে
+const isAdmin = (req, res, next) => {
+    const authUserId = parseInt(req.query.user_id || req.body.user_id);
+    if (authUserId && authUserId === ADMIN_TELEGRAM_ID) {
+        next();
+    } else {
+        res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
+};
+
+app.get('/api/admin/sdks', isAdmin, (req, res) => {
+    res.json(adSdks);
+});
+
+app.post('/api/admin/update-sdks', isAdmin, (req, res) => {
     const { ad1, ad2, ad3, ad4 } = req.body;
+    adSdks = { ad1, ad2, ad3, ad4 };
+    res.json({ success: true, message: 'SDKs updated successfully' });
+});
 
-    // ভ্যারিয়েবলে নতুন SDK গুলো সেভ করা হচ্ছে
-    adSdks.ad1 = ad1 || '';
-    adSdks.ad2 = ad2 || '';
-    adSdks.ad3 = ad3 || '';
-    adSdks.ad4 = ad4 || '';
+app.get('/api/admin/stats', isAdmin, (req, res) => {
+    const q1 = "SELECT COUNT(*) as total_users FROM users WHERE is_admin = 0";
+    const q2 = "SELECT SUM(ads_watched) as total_ads_watched FROM users";
+    Promise.all([
+        new Promise((resolve, reject) => db.get(q1, (err, row) => err ? reject(err) : resolve(row))),
+        new Promise((resolve, reject) => db.get(q2, (err, row) => err ? reject(err) : resolve(row)))
+    ]).then(results => {
+        res.json({ total_users: results[0].total_users, total_ads_watched: results[1].total_ads_watched });
+    }).catch(err => res.status(500).json({ error: err.message }));
+});
 
-    console.log('Updated SDKs:', adSdks); // সার্ভার কনসোলে লগ দেখানোর জন্য
-    res.json({ success: true, message: 'SDKs updated successfully!' });
+// এই নতুন API টি যোগ করা হয়েছে
+app.get('/api/admin/withdrawal-requests', isAdmin, (req, res) => {
+    const sql = `SELECT w.id, w.user_id, w.amount, w.method, w.account_number, w.status, w.created_at, u.username 
+                 FROM withdrawals w JOIN users u ON u.telegram_id = w.user_id 
+                 WHERE w.status = 'pending' 
+                 ORDER BY w.created_at ASC`;
+    db.all(sql, [], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows);
+    });
 });
 
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
-
-
-
