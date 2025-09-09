@@ -8,7 +8,11 @@ const port = process.env.PORT || 3000;
 // আপনার দেওয়া অ্যাডমিন আইডি এখানে সেট করা আছে
 const ADMIN_TELEGRAM_ID = 8457318925; 
 
-app.use(cors());
+app.use(cors({
+    origin: '*', // সব ধরনের ওয়েবসাইটকে ডেটা ব্যবহারের অনুমতি দেওয়া হচ্ছে
+    methods: ['GET', 'POST', 'PUT', 'DELETE'], // সব ধরনের রিকোয়েস্ট মেথডকে অনুমতি দেওয়া হচ্ছে
+    allowedHeaders: ['Content-Type', 'Authorization'] // প্রয়োজনীয় হেডারগুলোকে অনুমতি দেওয়া হচ্ছে
+}));
 app.use(express.json());
 
 app.get('/', (req, res) => {
@@ -84,5 +88,6 @@ app.post('/api/admin/update-sdks', (req, res) => {
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
+
 
 
